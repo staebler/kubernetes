@@ -95,31 +95,25 @@ var watermark = &requestWatermark{
 	mutatingObserver: fcmetrics.ReadWriteConcurrencyObserverPairGenerator.Generate(1, 1, []string{metrics.MutatingKind}).RequestsExecuting,
 }
 
-func startRecordingUsage(watermark *requestWatermark) {
-	go func() {
-		wait.Forever(func() {
-			watermark.lock.Lock()
-			readOnlyWatermark := watermark.readOnlyWatermark
-			mutatingWatermark := watermark.mutatingWatermark
-			watermark.readOnlyWatermark = 0
-			watermark.mutatingWatermark = 0
-			watermark.lock.Unlock()
+func startRecordingUsage(watermark *requestWatermark, stopCh <-chan struct{}) {
+	go wait.Until(func() {
+		watermark.lock.Lock()
+		readOnlyWatermark := watermark.readOnlyWatermark
+		mutatingWatermark := watermark.mutatingWatermark
+		watermark.readOnlyWatermark = 0
+		watermark.mutatingWatermark = 0
+		watermark.lock.Unlock()
 
-			metrics.UpdateInflightRequestMetrics(watermark.phase, readOnlyWatermark, mutatingWatermark)
-		}, inflightUsageMetricUpdatePeriod)
-	}()
+		metrics.UpdateInflightRequestMetrics(watermark.phase, readOnlyWatermark, mutatingWatermark)
+	}, inflightUsageMetricUpdatePeriod, stopCh)
 }
 
-func maintainObservations(watermark *requestWatermark) {
-	go func() {
-		wait.Forever(func() {
-			watermark.readOnlyObserver.Add(0)
-			watermark.mutatingObserver.Add(0)
-		}, observationMaintenancePeriod)
-	}()
+func maintainObservations(watermark *requestWatermark, stopCh <-chan struct{}) {
+	go wait.Until(func() {
+		watermark.readOnlyObserver.Add(0)
+		watermark.mutatingObserver.Add(0)
+	}, observationMaintenancePeriod, stopCh)
 }
-
-var startOnce sync.Once
 
 // WithMaxInFlightLimit limits the number of in-flight requests to buffer size of the passed in channel.
 func WithMaxInFlightLimit(
@@ -128,10 +122,6 @@ func WithMaxInFlightLimit(
 	mutatingLimit int,
 	longRunningRequestCheck apirequest.LongRunningRequestCheck,
 ) http.Handler {
-	startOnce.Do(func() {
-		startRecordingUsage(watermark)
-		maintainObservations(watermark)
-	})
 	if nonMutatingLimit == 0 && mutatingLimit == 0 {
 		return handler
 	}
@@ -215,6 +205,11 @@ func WithMaxInFlightLimit(
 			}
 		}
 	})
+}
+
+func StartMaxInFlightWatermarkMaintenance(stopCh <-chan struct{}) {
+	startRecordingUsage(watermark, stopCh)
+	maintainObservations(watermark, stopCh)
 }
 
 func tooManyRequests(req *http.Request, w http.ResponseWriter) {

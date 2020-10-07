@@ -76,12 +76,6 @@ func WithPriorityAndFairness(
 		klog.Warningf("priority and fairness support not found, skipping")
 		return handler
 	}
-	startOnce.Do(func() {
-		startRecordingUsage(watermark)
-		startRecordingUsage(waitingMark)
-		maintainObservations(watermark)
-		maintainObservations(waitingMark)
-	})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		requestInfo, ok := apirequest.RequestInfoFrom(ctx)
@@ -151,4 +145,11 @@ func WithPriorityAndFairness(
 		}
 
 	})
+}
+
+func StartPriorityAndFairnessWatermarkMaintenance(stopCh <-chan struct{}) {
+	startRecordingUsage(watermark, stopCh)
+	startRecordingUsage(waitingMark, stopCh)
+	maintainObservations(watermark, stopCh)
+	maintainObservations(waitingMark, stopCh)
 }
