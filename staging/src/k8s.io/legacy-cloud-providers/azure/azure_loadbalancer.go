@@ -1125,6 +1125,10 @@ func (az *Cloud) reconcileLoadBalancer(clusterName string, service *v1.Service, 
 				klog.V(10).Infof("reconcileLoadBalancer for service (%s)(%t): lb backendpool - found wanted backendpool. not adding anything", serviceName, wantLb)
 				foundBackendPool = true
 
+				if !az.useStandardLoadBalancer() || !az.EnableMultipleStandardLoadBalancers {
+					break
+				}
+
 				var backendIPConfigurationsToBeDeleted []network.InterfaceIPConfiguration
 				if bp.BackendAddressPoolPropertiesFormat != nil && bp.BackendIPConfigurations != nil {
 					for _, ipConf := range *bp.BackendIPConfigurations {
